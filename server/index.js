@@ -285,8 +285,18 @@ app.use(cors({
 app.use(express.json({ limit: '10mb' }));
 
 // Serve static files from React build (for production)
+const fs = require('fs');
 const buildPath = path.join(__dirname, 'client/dist');
 console.log('📁 Serving static files from:', buildPath);
+console.log('📁 __dirname:', __dirname);
+console.log('📁 Build path exists?', fs.existsSync(buildPath));
+
+// List files in build directory for debugging
+if (fs.existsSync(buildPath)) {
+  console.log('📁 Files in build directory:', fs.readdirSync(buildPath));
+} else {
+  console.error('❌ Build directory does not exist!');
+}
 
 // Serve static files with proper MIME types
 app.use(express.static(buildPath, {
