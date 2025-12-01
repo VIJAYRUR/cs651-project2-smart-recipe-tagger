@@ -286,6 +286,7 @@ app.use(express.json({ limit: '10mb' }));
 
 // Serve static files from React build (for production)
 const buildPath = path.join(__dirname, '../client/dist');
+console.log('📁 Serving static files from:', buildPath);
 app.use(express.static(buildPath));
 
 app.get('/health', (req, res) => {
@@ -1016,8 +1017,14 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(buildPath, 'index.html'));
 });
 
+console.log('🔧 Starting server...');
+console.log('📍 PORT:', PORT);
+console.log('🌍 NODE_ENV:', process.env.NODE_ENV);
+console.log('📁 Build path:', buildPath);
+
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 Server listening on port ${PORT}`);
+  console.log(`🚀 Server successfully started and listening on port ${PORT}`);
+  console.log(`🌐 Server is ready to accept connections on 0.0.0.0:${PORT}`);
 });
 
 module.exports = app;
