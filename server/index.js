@@ -265,17 +265,24 @@ async function generateRecipeWithGemini({ title, tags, description, ocrText }) {
 const allowedOrigins = [
   'http://localhost:5173',
   'http://localhost:3000',
-  process.env.FRONTEND_URL, // For production
+  'https://smart-recipe-tagger-1025290067260.us-central1.run.app',
+  process.env.FRONTEND_URL, // For production (if set)
 ].filter(Boolean);
 
 app.use(cors({
   origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps or curl requests)
+    // Allow requests with no origin (like mobile apps, curl, or same-origin)
     if (!origin) return callback(null, true);
+
+    // In production, if frontend and backend are on same domain, allow it
+    if (process.env.NODE_ENV === 'production' && !process.env.FRONTEND_URL) {
+      return callback(null, true);
+    }
 
     if (allowedOrigins.indexOf(origin) !== -1 || process.env.NODE_ENV === 'development') {
       callback(null, true);
     } else {
+      console.warn('⚠️ CORS blocked origin:', origin);
       callback(new Error('Not allowed by CORS'));
     }
   },
