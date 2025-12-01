@@ -287,7 +287,17 @@ app.use(express.json({ limit: '10mb' }));
 // Serve static files from React build (for production)
 const buildPath = path.join(__dirname, 'client/dist');
 console.log('📁 Serving static files from:', buildPath);
-app.use(express.static(buildPath));
+
+// Serve static files with proper MIME types
+app.use(express.static(buildPath, {
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith('.css')) {
+      res.setHeader('Content-Type', 'text/css');
+    } else if (filePath.endsWith('.js')) {
+      res.setHeader('Content-Type', 'application/javascript');
+    }
+  }
+}));
 
 app.get('/health', (req, res) => {
   res.json({ status: 'ok' });
