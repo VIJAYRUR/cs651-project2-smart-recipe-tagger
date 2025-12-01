@@ -30,18 +30,15 @@ RUN npm ci --only=production
 # Stage 3: Production image
 FROM node:18-alpine
 
-WORKDIR /app
+WORKDIR /workspace
 
 # Copy server code and dependencies
-COPY --from=server-build /app/server/node_modules ./server/node_modules
-COPY server/package*.json ./server/
-COPY server/index.js ./server/
+COPY --from=server-build /app/server/node_modules ./node_modules
+COPY server/package*.json ./
+COPY server/index.js ./
 
 # Copy built React app from client-build stage
 COPY --from=client-build /app/client/dist ./client/dist
-
-# Set working directory to server
-WORKDIR /app/server
 
 # Expose port (Cloud Run will set PORT env var)
 EXPOSE 8080

@@ -285,7 +285,7 @@ app.use(cors({
 app.use(express.json({ limit: '10mb' }));
 
 // Serve static files from React build (for production)
-const buildPath = path.join(__dirname, '../client/dist');
+const buildPath = path.join(__dirname, 'client/dist');
 console.log('📁 Serving static files from:', buildPath);
 app.use(express.static(buildPath));
 
@@ -1013,7 +1013,8 @@ app.post('/api/recipes/bulk', async (req, res) => {
 });
 
 // Catch-all route to serve React app for any non-API routes
-app.get('*', (req, res) => {
+// Using a regex pattern instead of '*' for Express 5 compatibility
+app.get(/^\/(?!api).*/, (req, res) => {
   res.sendFile(path.join(buildPath, 'index.html'));
 });
 
