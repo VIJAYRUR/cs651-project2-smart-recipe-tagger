@@ -10,10 +10,10 @@ COPY client/package*.json ./
 # Install ALL dependencies (including devDependencies needed for build)
 RUN npm ci
 
-# Copy client source
+# Copy client source (including .env.production)
 COPY client/ ./
 
-# Build React app
+# Build React app (Vite will automatically use .env.production)
 RUN npm run build
 
 # Stage 2: Setup Node.js server

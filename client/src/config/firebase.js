@@ -31,6 +31,11 @@ export const storage = getStorage(app);
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 
+// Set custom parameters to use the correct OAuth client
+googleProvider.setCustomParameters({
+  prompt: 'select_account'
+});
+
 // Add scopes for Google user info (Photos access now uses OAuth in AuthContext)
 googleProvider.addScope('https://www.googleapis.com/auth/userinfo.profile');
 googleProvider.addScope('https://www.googleapis.com/auth/userinfo.email');
