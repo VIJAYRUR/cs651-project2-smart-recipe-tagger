@@ -3,6 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const { MongoClient, ServerApiVersion } = require('mongodb');
 const https = require('https');
+const path = require('path');
 
 
 const app = express();
@@ -260,12 +261,32 @@ async function generateRecipeWithGemini({ title, tags, description, ocrText }) {
 
 
 
+// CORS configuration - allow both local dev and production
+const allowedOrigins = [
+  'http://localhost:5173',
+  'http://localhost:3000',
+  process.env.FRONTEND_URL, // For production
+].filter(Boolean);
+
 app.use(cors({
-  origin: 'http://localhost:5173',
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+
+    if (allowedOrigins.indexOf(origin) !== -1 || process.env.NODE_ENV === 'development') {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   credentials: false,
 }));
 
 app.use(express.json({ limit: '10mb' }));
+
+// Serve static files from React build (for production)
+const buildPath = path.join(__dirname, '../client/dist');
+app.use(express.static(buildPath));
 
 app.get('/health', (req, res) => {
   res.json({ status: 'ok' });
@@ -990,7 +1011,12 @@ app.post('/api/recipes/bulk', async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
+// Catch-all route to serve React app for any non-API routes
+app.get('*', (req, res) => {
+  res.sendFile(path.join(buildPath, 'index.html'));
+});
+
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Server listening on port ${PORT}`);
 });
 
