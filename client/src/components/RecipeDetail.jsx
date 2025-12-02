@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { Container, Row, Col, Card, Button, Badge, Spinner, Alert } from 'react-bootstrap';
 import { useAuth } from '../context/AuthContext';
+import { trackApiCall, trackError } from '../analytics';
 import DashboardNavbar from './DashboardNavbar';
 import './PhotoGallery.css';
 
@@ -71,6 +72,9 @@ const RecipeDetail = () => {
       try {
         setLoadingTags(true);
 
+        // Track Vision API call
+        trackApiCall('vision_api', 'analyze_image');
+
         const res = await fetch(
           `${API_BASE_URL}/api/recipes/${encodeURIComponent(
             recipe.id,
@@ -81,6 +85,7 @@ const RecipeDetail = () => {
         if (!res.ok) {
           const text = await res.text();
           console.error('Vision analyze failed:', res.status, text);
+          trackError(`Vision API failed: ${res.status}`);
           return;
         }
 
@@ -89,9 +94,11 @@ const RecipeDetail = () => {
           const topTags = data.tags.slice(0, 5);
           setTags(topTags);
           setRecipe((prev) => (prev ? { ...prev, visionTags: topTags } : prev));
+          trackApiCall('vision_api', `success_${topTags.length}_tags`);
         }
       } catch (err) {
         console.error('Error calling Vision API endpoint:', err);
+        trackError(`Vision API error: ${err.message}`);
       } finally {
         setLoadingTags(false);
       }
@@ -184,6 +191,9 @@ const RecipeDetail = () => {
       setLoadingGemini(true);
       setError('');
 
+      // Track Gemini API call
+      trackApiCall('gemini_api', 'generate_recipe');
+
       const res = await fetch(
         `${API_BASE_URL}/api/recipes/${encodeURIComponent(
           recipe.id,
@@ -194,6 +204,7 @@ const RecipeDetail = () => {
       if (!res.ok) {
         const text = await res.text();
         console.error('Gemini generate failed:', res.status, text);
+        trackError(`Gemini API failed: ${res.status}`);
         setError('Failed to generate recipe. Please try again.');
         return;
       }
@@ -205,9 +216,11 @@ const RecipeDetail = () => {
         if (Array.isArray(data.aiAnalysis.tags) && data.aiAnalysis.tags.length > 0) {
           setTags(data.aiAnalysis.tags.slice(0, 5));
         }
+        trackApiCall('gemini_api', 'success');
       }
     } catch (err) {
       console.error('Error calling Gemini generate endpoint:', err);
+      trackError(`Gemini API error: ${err.message}`);
       setError('Failed to generate recipe. Please try again.');
     } finally {
       setLoadingGemini(false);

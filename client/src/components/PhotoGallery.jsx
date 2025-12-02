@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { storage } from '../config/firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { trackApiCall, trackError } from '../analytics';
 import './PhotoGallery.css';
 import DashboardNavbar from './DashboardNavbar';
 
@@ -153,6 +154,9 @@ const PhotoGallery = () => {
     try {
       console.log('📸 Starting Google Photos Picker session...');
 
+      // Track Google Photos API call
+      trackApiCall('google_photos_picker', 'session_start');
+
       const createResponse = await fetch('https://photospicker.googleapis.com/v1/sessions', {
         method: 'POST',
         headers: {
@@ -165,6 +169,7 @@ const PhotoGallery = () => {
       if (!createResponse.ok) {
         const errorData = await createResponse.json().catch(() => ({}));
         console.error('❌ sessions.create error:', errorData);
+        trackError(`Google Photos Picker failed: ${createResponse.status}`);
         throw new Error(`Failed to start picker session: ${createResponse.status} ${createResponse.statusText}`);
       }
 
@@ -182,6 +187,9 @@ const PhotoGallery = () => {
 
       const pickedItems = await listPickedMediaItems(sessionId);
       console.log('✅ Picked media items:', pickedItems);
+
+      // Track successful photo selection
+      trackApiCall('google_photos_picker', `selected_${pickedItems?.length || 0}_photos`);
 
       if (!pickedItems || pickedItems.length === 0) {
         setError('No photos were selected from Google Photos.');
@@ -224,6 +232,7 @@ const PhotoGallery = () => {
       setShowPhotoModal(false);
     } catch (err) {
       console.error('❌ Error during Google Photos Picker flow:', err);
+      trackError(`Google Photos Picker error: ${err.message}`);
       setError(`Failed to fetch photos: ${err.message}`);
     } finally {
       setLoading(false);
@@ -313,55 +322,25 @@ const PhotoGallery = () => {
 
   const saveSelectedPhotosToFirestore = async (photosOverride) => {
     const photos = photosOverride || selectedPhotos;
-    if (!user || !user.email || photos.length === 0) return;
+    if (!user || !user.email || !accessToken || photos.length === 0) return;
 
     try {
-      console.log('Saving selected photos to MongoDB:', photos);
+      console.log('Saving selected photos via backend download + Firebase upload:', photos);
       setSavingRecipes(true);
       setError('');
 
-      // Ensure each photo is uploaded to Firebase Storage first and use the
-      // Firebase download URL (not the Google Photos baseUrl) before saving.
-      const uploadedPhotos = await Promise.all(
-        photos.map(async (photo) => {
-          // If the photo already has a non-Google-Photos URL, reuse it.
-          if (photo.url && !photo.url.startsWith('https://lh3.googleusercontent.com/')) {
-            return photo;
-          }
-
-          if (!photo.url) {
-            throw new Error(`Photo ${photo.id} is missing a URL to download from Google Photos.`);
-          }
-
-          const { imageUrl, thumbnailUrl } = await downloadAndUploadPhoto({
-            id: photo.id,
-            baseUrl: photo.url,
-            mimeType: photo.mimeType,
-            name: photo.name,
-          });
-
-          return {
-            ...photo,
-            url: imageUrl,
-            thumbnailUrl,
-          };
-        }),
-      );
-
-      // After saving to your board, we'll clear the selection so photos only appear once.
-      // (The saved recipes grid above shows your uploaded photos.)
-
-      const payload = uploadedPhotos.map((photo) => ({
-        photoId: photo.id,
-        filename: photo.name,
-        imageUrl: photo.url,
-        thumbnailUrl: photo.thumbnailUrl || photo.url,
-        mimeType: photo.mimeType || 'image/jpeg',
+      const payload = {
+        photos: photos.map((photo) => ({
+          photoId: photo.id,
+          filename: photo.name,
+          baseUrl: photo.url,
+          mimeType: photo.mimeType || 'image/jpeg',
+        })),
+        accessToken,
         userEmail: user.email,
-        createdAt: new Date().toISOString(),
-      }));
+      };
 
-      const res = await fetch(`${API_BASE_URL}/api/recipes/bulk`, {
+      const res = await fetch(`${API_BASE_URL}/api/recipes/download-and-save`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -369,15 +348,18 @@ const PhotoGallery = () => {
 
       if (!res.ok) {
         const text = await res.text();
-        throw new Error(`Failed to save recipes: ${res.status} ${text}`);
+        throw new Error(`Failed to download & save recipes: ${res.status} ${text}`);
       }
+
+      // Optionally parse and log response, but we don't depend on it for UI
+      await res.json().catch(() => null);
 
       await loadRecipes();
 
       // Clear selection so photos don't appear both in "Your Recipe Photos" and "Selected Photos".
       setSelectedPhotos([]);
     } catch (err) {
-      console.error('Error saving recipes to MongoDB:', err);
+      console.error('Error saving recipes via backend:', err);
       setError('Failed to save recipes to your board.');
     } finally {
       setSavingRecipes(false);

@@ -4,6 +4,8 @@ const cors = require('cors');
 const { MongoClient, ServerApiVersion } = require('mongodb');
 const https = require('https');
 const path = require('path');
+const admin = require('firebase-admin');
+const { trackServerEvent, trackApiCall, trackApiError } = require('./analytics');
 
 
 const app = express();
@@ -11,6 +13,19 @@ const PORT = process.env.PORT || 4000;
 const MONGODB_URI = process.env.MONGODB_URI;
 const GOOGLE_VISION_API_KEY = process.env.GOOGLE_VISION_API_KEY;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+
+// Initialize Firebase Admin SDK
+// For local development, you can use application default credentials
+// For production, set GOOGLE_APPLICATION_CREDENTIALS environment variable
+try {
+  admin.initializeApp({
+    projectId: 'axial-life-455205-k9',
+    storageBucket: 'axial-life-455205-k9.firebasestorage.app',
+  });
+  console.log('✅ Firebase Admin SDK initialized');
+} catch (error) {
+  console.error('❌ Error initializing Firebase Admin SDK:', error.message);
+}
 
 if (!MONGODB_URI) {
   console.warn('⚠️ MONGODB_URI is not set. API routes will return 500 until it is configured.');
@@ -778,6 +793,9 @@ app.post('/api/recipes/:id/analyze-vision', async (req, res) => {
       return res.status(400).json({ error: 'Recipe does not have an imageUrl to analyze' });
     }
 
+    // Track Vision API call
+    trackApiCall('vision', { recipe_id: id, user_email: email });
+
     const tags = await getVisionLabelsForImage(doc.imageUrl, 5);
 
     await collection.updateOne(
@@ -785,9 +803,13 @@ app.post('/api/recipes/:id/analyze-vision', async (req, res) => {
       { $set: { visionTags: tags } },
     );
 
+    // Track successful Vision API call
+    trackServerEvent('vision_api_call', { success: true, tags_count: tags.length });
+
     res.json({ tags });
   } catch (err) {
     console.error('Error analyzing recipe image with Vision API:', err);
+    trackApiError('vision', err, { recipe_id: req.params.id });
     res.status(500).json({ error: 'Failed to analyze image' });
   }
 });
@@ -927,6 +949,9 @@ app.post('/api/recipes/:id/generate-recipe', async (req, res) => {
       ocrText: doc.ocrText || '',
     };
 
+    // Track Gemini API call
+    trackApiCall('gemini', { recipe_id: id, user_email: email, tags_count: tags.length });
+
     const generated = await generateRecipeWithGemini(aiInput);
 
     const normalizedGenerated = {
@@ -962,15 +987,174 @@ app.post('/api/recipes/:id/generate-recipe', async (req, res) => {
       { $set: { aiAnalysis: updatedAiAnalysis } },
     );
 
+    // Track successful Gemini API call
+    trackServerEvent('gemini_api_call', {
+      success: true,
+      has_ingredients: Array.isArray(updatedAiAnalysis.ingredients),
+      has_instructions: Array.isArray(updatedAiAnalysis.instructions)
+    });
+
     res.json({ aiAnalysis: updatedAiAnalysis });
   } catch (err) {
     console.error('Error generating recipe with Gemini:', err);
+    trackApiError('gemini', err, { recipe_id: req.params.id });
     res.status(500).json({ error: 'Failed to generate recipe' });
   }
 });
 
 
 
+
+// POST /api/recipes/download-and-save
+// Body: { photos: [{ photoId, filename, baseUrl, mimeType }], accessToken, userEmail }
+// Downloads photos from Google Photos and uploads to Firebase Storage
+app.post('/api/recipes/download-and-save', async (req, res) => {
+  try {
+    const { photos, accessToken, userEmail } = req.body;
+
+    if (!photos || !Array.isArray(photos) || photos.length === 0) {
+      return res.status(400).json({ error: 'Photos array is required' });
+    }
+
+    if (!accessToken) {
+      return res.status(400).json({ error: 'Access token is required' });
+    }
+
+    if (!userEmail) {
+      return res.status(400).json({ error: 'User email is required' });
+    }
+
+    console.log(`📥 Downloading and uploading ${photos.length} photos for user ${userEmail}`);
+
+    // Track Google Photos API call
+    trackApiCall('photos', { user_email: userEmail, photo_count: photos.length });
+
+    const results = [];
+    const errors = [];
+
+    for (const photo of photos) {
+      try {
+        const { photoId, filename, baseUrl, mimeType } = photo;
+
+        if (!photoId || !baseUrl) {
+          errors.push({ photoId, error: 'Missing photoId or baseUrl' });
+          continue;
+        }
+
+        // Download from Google Photos with access token
+        const downloadUrl = `${baseUrl}=w2048-h2048`;
+        console.log(`📥 Downloading photo ${photoId} from Google Photos...`);
+
+        const downloadResponse = await fetch(downloadUrl, {
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+          },
+        });
+
+        if (!downloadResponse.ok) {
+          throw new Error(`Failed to download: ${downloadResponse.status} ${downloadResponse.statusText}`);
+        }
+
+        const imageBuffer = await downloadResponse.arrayBuffer();
+        const imageBlob = Buffer.from(imageBuffer);
+
+        // Determine file extension
+        const extensionFromMime = (mimeType || 'image/jpeg').split('/')[1] || 'jpeg';
+        const safeExtension = extensionFromMime.split('+')[0];
+
+        // Upload to Firebase Storage
+        const userId = userEmail.replace(/[^a-zA-Z0-9]/g, '_'); // Sanitize email for path
+        const storagePath = `user_uploads/${userId}/${photoId}.${safeExtension}`;
+
+        console.log(`☁️ Uploading to Firebase Storage: ${storagePath}`);
+
+        const bucket = admin.storage().bucket();
+        const file = bucket.file(storagePath);
+
+        await file.save(imageBlob, {
+          metadata: {
+            contentType: mimeType || 'image/jpeg',
+            metadata: {
+              originalName: filename || photoId,
+              source: 'google-photos',
+              uploadedAt: new Date().toISOString(),
+            },
+          },
+        });
+
+        // Make the file publicly readable
+        await file.makePublic();
+
+        // Get the public URL
+        const publicUrl = `https://storage.googleapis.com/${bucket.name}/${storagePath}`;
+
+        console.log(`✅ Successfully uploaded photo ${photoId}`);
+
+        results.push({
+          photoId,
+          filename: filename || photoId,
+          imageUrl: publicUrl,
+          thumbnailUrl: publicUrl,
+          mimeType: mimeType || 'image/jpeg',
+        });
+      } catch (error) {
+        console.error(`❌ Error processing photo ${photo.photoId}:`, error);
+        errors.push({
+          photoId: photo.photoId,
+          error: error.message,
+        });
+      }
+    }
+
+    // Save successfully uploaded photos to MongoDB
+    if (results.length > 0) {
+      const collection = await getRecipesCollection();
+
+      const operations = results.map((item) => {
+        const createdAtDate = new Date();
+
+        return {
+          updateOne: {
+            filter: { photoId: item.photoId, userEmail },
+            update: {
+              $set: {
+                photoId: item.photoId,
+                filename: item.filename,
+                imageUrl: item.imageUrl,
+                thumbnailUrl: item.thumbnailUrl,
+                mimeType: item.mimeType,
+                userEmail,
+                createdAt: createdAtDate,
+              },
+            },
+            upsert: true,
+          },
+        };
+      });
+
+      await collection.bulkWrite(operations, { ordered: false });
+    }
+
+    // Track successful photo upload
+    trackServerEvent('photos_api_call', {
+      success: true,
+      uploaded_count: results.length,
+      failed_count: errors.length
+    });
+
+    res.json({
+      success: true,
+      uploaded: results.length,
+      failed: errors.length,
+      results,
+      errors: errors.length > 0 ? errors : undefined,
+    });
+  } catch (err) {
+    console.error('Error downloading and saving photos:', err);
+    trackApiError('photos', err, { user_email: req.body.userEmail });
+    res.status(500).json({ error: 'Failed to download and save photos' });
+  }
+});
 
 // POST /api/recipes/bulk
 // Body: [{ photoId, filename, imageUrl, thumbnailUrl, mimeType, userEmail, createdAt }]

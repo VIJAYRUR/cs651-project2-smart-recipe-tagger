@@ -36,6 +36,7 @@ WORKDIR /workspace
 COPY --from=server-build /app/server/node_modules ./node_modules
 COPY server/package*.json ./
 COPY server/index.js ./
+COPY server/analytics.js ./
 
 # Copy built React app from client-build stage
 COPY --from=client-build /app/client/dist ./client/dist
