@@ -13,7 +13,7 @@ export const initializeAnalytics = () => {
 // Track page views
 export const trackPageView = (path) => {
   ReactGA.send({ hitType: 'pageview', page: path });
-  console.log(`📊 GA: Page view tracked - ${path}`);
+  console.log(`📊 GA: Page view tracked - ${path}`);   
 };
 
 // Track API calls
