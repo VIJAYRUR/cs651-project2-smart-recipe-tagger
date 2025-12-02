@@ -999,8 +999,6 @@ app.post('/api/recipes/:id/generate-recipe', async (req, res) => {
 });
 
 
-
-
 // POST /api/recipes/download-and-save
 // Body: { photos: [{ photoId, filename, baseUrl, mimeType }], accessToken, userEmail }
 // Downloads photos from Google Photos and uploads to Firebase Storage
