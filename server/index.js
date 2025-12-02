@@ -7,7 +7,6 @@ const path = require('path');
 const admin = require('firebase-admin');
 const { trackServerEvent, trackApiCall, trackApiError } = require('./analytics');
 
-
 const app = express();
 const PORT = process.env.PORT || 4000;
 const MONGODB_URI = process.env.MONGODB_URI;
@@ -41,7 +40,6 @@ if (!GEMINI_API_KEY) {
 
 console.log('GOOGLE_VISION_API_KEY loaded?', !!GOOGLE_VISION_API_KEY, GOOGLE_VISION_API_KEY ? GOOGLE_VISION_API_KEY.slice(0, 8) + '...' : '');
 console.log('GEMINI_API_KEY loaded?', !!GEMINI_API_KEY, GEMINI_API_KEY ? GEMINI_API_KEY.slice(0, 8) + '...' : '');
-
 
 const DB_NAME = 'FinalProjectWS';
 const COLLECTION_NAME = 'Recipes';
@@ -135,8 +133,6 @@ async function getVisionLabelsForImage(imageUrl, maxResults = 5) {
     req.on('error', (err) => {
       reject(err);
     });
-
-
 
     req.write(payload);
     req.end();
