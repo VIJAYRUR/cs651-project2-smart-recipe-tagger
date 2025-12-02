@@ -1,6 +1,6 @@
 # Smart Recipe Tagger
 
-Issues, Concerns or Comments: snagarur@horizon.csueastbay.edu 
+## Issues, Concerns or Comments: snagarur@horizon.csueastbay.edu 
 
 A web application that allows users to sign in with Google, connect to their Google Photos, and discover recipes from food images using AI.
 
